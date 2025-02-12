@@ -4,29 +4,38 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
+require('dotenv').config();
 
-// Initialize the Express application
 const app = express();
 
-// Apply middleware
-app.use(cors()); // Enable Cross-Origin Resource Sharing
-app.use(bodyParser.json()); // Parse JSON request bodies
+app.use(cors());
+app.use(bodyParser.json()); 
 
-// Encapsulated function to scrape text from a URL
+// scrape text from a URL
 async function scrapeTextFromURL(url) {
     try {
         console.log(`Fetching and scraping text from URL: ${url}`);
 
-        // Fetch the webpage data
-        const { data } = await axios.get(url);
+        // Fetch the webpage data with a custom User-Agent to mimic a regular browser request
+        const { data } = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
 
         // Use Cheerio to load the HTML and extract the text
         const $ = cheerio.load(data);
-        const text = $('body').text().trim();
 
-        // Check if text content exists
+        // Target specific content-rich elements (main, article, section, header, or body)
+        let text = $('main').text().trim() || 
+        $('article').text().trim() || 
+        $('section').text().trim() || 
+        $('header').text().trim() || 
+        $('body').text().trim();
+
+        // Check if text exist
         if (!text) {
-            console.error('No text content found at the provided URL');
+            console.error('The text content did not found at the provided URL');
             return null;
         }
 
@@ -36,54 +45,54 @@ async function scrapeTextFromURL(url) {
         return trimmedText;
     } catch (error) {
         console.error('Error while scraping text from the URL:', error.message);
+        if (error.response && error.response.status === 403) {
+            throw new Error('Access to the URL is forbidden. Please check if scraping is allowed.');
+        }
         throw new Error('Failed to scrape text from the URL');
     }
 }
 
-// Route to analyze text from a URL
-app.post('/analyze-url', async (req, res) => {
-    const { url } = req.body;
+// url-to-api route
+app.post('/url-to-api', async (req, res) => {
+    const { entered_url } = req.body;
 
     // Validate the input URL
-    if (!url) {
+    if (!entered_url) {
         console.error('No URL provided in the request body');
         return res.status(400).json({ error: 'URL is required' });
     }
 
     try {
-        // Step 1: Scrape text from the provided URL
-        const text = await scrapeTextFromURL(url);
+        // scrape text from the URL
+        const text = await scrapeTextFromURL(entered_url);
 
         if (!text) {
             return res.status(400).json({ error: 'No text content found at the provided URL' });
         }
 
-        // Step 2: Connect to the AWS NLP API
-        // --- Learner Task: Add the code to send the extracted text to the AWS NLP API below ---
-        // Use `axios.post` to send a POST request to the API.
-        // The endpoint URL is: https://kooye7u703.execute-api.us-east-1.amazonaws.com/NLPAnalyzer
-        // Send the `text` as part of the request body.
-
-        /*
-        Example Code:
-        const response = await axios.post('https://kooye7u703.execute-api.us-east-1.amazonaws.com/NLPAnalyzer', { text });
-        return res.json(response.data); // Send the NLP results back to the client
-        */
-
-        // Placeholder response for learners to complete
-        return res.json({ message: 'NLP analysis result will be here. Complete the API call above!' });
+        // connect to the AWS NLP API(UDACITY_API)
+        try {
+            console.log('Text being sent to NLP API:', text);
+            const response = await axios.post(process.env.UDACITY_API, { text });
+            //print then return the NLP results to the client
+            console.log('NLP API Response:', response.data);
+            return res.json(response.data);
+        } catch (error) {
+            console.error('Error from NLP API:', error.response?.data || error.message);
+            return res.status(500).json({ error: 'Failed to analyze the text with NLP API' });
+        }
     } catch (error) {
         console.error('Error during URL processing or API request:', error.message);
         return res.status(500).json({ error: 'Failed to analyze the URL' });
     }
 });
 
-// Default route
+// default route
 app.get('/', (req, res) => {
     res.send("This is the server API page. You may access its services via the client app.");
 });
 
-// Start the server
+// start the server on port 8000
 app.listen(8000, () => {
     console.log('Server running on port 8000');
 });
